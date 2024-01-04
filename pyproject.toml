@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+bulid-backend = "setuptools.build_meta"
+
+[project]
+name = "dakirby"
+version = "0.0.1"
+
+dependencies = [
+  "lxml"
+]
+
+[project.scripts]
+dakirby = "dakirby.cli:main"
+

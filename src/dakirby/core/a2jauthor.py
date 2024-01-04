@@ -1,17 +1,7 @@
 #!/usr/bin/env python3
 
-import sys
-import re
 from lxml import etree
-from pyaml import dump_all
-
-replace_square_brackets = re.compile(r"\\\[ *([^\\]+)\\\]")
-end_spaces = re.compile(r" +$")
-spaces = re.compile(r"[ \n]+")
-invalid_var_characters = re.compile(r"[^A-Za-z0-9_]+")
-digit_start = re.compile(r"^[0-9]+")
-newlines = re.compile(r"\n")
-remove_u = re.compile(r"^u")
+from .common import varname, PageNode
 
 def parse_inline(inline_elem):
   text = inline_elem.text or ""
@@ -51,7 +41,7 @@ def parse_text(text_elem):
   return text + text_elem.tail
 
 
-class PageNode:
+class A2JPage(PageNode):
 
   def __init__(self, page_elem):
     self.parent = None # need to update this later
@@ -111,7 +101,7 @@ class PageNode:
         elif button_attr.tag.lower() == "value":
           button["value"] = button_attr.text
         else:
-          print(f"Unknown button attr: {field_attr.tag}")
+          print(f"Unknown button attr: {button_attr.tag}")
     return buttons
 
   def parse_fields(self, fields_elem):
@@ -154,111 +144,80 @@ class PageNode:
     return block
 
 
+class A2JInterview:
 
-def parse_authors(authors_elem, da_interview):
-  authors = []
-  for author_elem in authors_elem:
-    author = {}
-    for author_attr in author_elem:
-      author[author_attr.tag.lower()] = author_attr.text
-    authors.append(author)
-  da_interview.metadata["authors"] = authors
-  return da_interview
-
-def parse_description(description_elem, da_interview):
-  da_interview.metadata["description"] = description_elem.text
-  return da_interview
-
-def parse_notes(elem, da_interview):
-  da_interview.changelog = elem.text
-  return da_interview
-
-def parse_emailcontact(elem, da_interview):
-  da_interview.setup_info["author_email"] = elem.text
-  return da_interview
-
-def parse_title(elem, da_interview):
-  da_interview.metadata["title"] = elem.text
-  return da_interview
-
-def parse_firstpage(elem, da_interview):
-  da_interview.first_page_name = elem.text
-  return da_interview
-
-parse_dict = {
-  "authors": parse_authors,
-  "description": parse_description,
-  "notes": parse_notes,
-  "emailcontact": parse_emailcontact,
-  "title": parse_title,
-  "firstpage": parse_firstpage
-}
-
-
-# From ALWeaver
-def varname(var_name: str) -> str:
-    if var_name:
-        var_name = var_name.strip()
-        var_name = spaces.sub(r"_", var_name)
-        var_name = invalid_var_characters.sub(r"", var_name)
-        var_name = digit_start.sub(r"", var_name)
-        return var_name
-    return var_name
-
-
-class DAInterview:
-
-  def __init__(self):
+  def __init__(self, input_filename):
     self.metadata = {}
     # Things like maintainer email, version, etc.
     self.setup_info = {}
-    self.page_map: dict[str, PageNode] = {}
+    self.page_map: dict[str, A2JPage] = {}
     self.first_page_name = None
     self.changelog = ""
-    self.steps: dict[int, str] = {}
+    self.sections: dict[int, str] = {}
     self.variable_map: dict[str, str] = {} # map from A2J varname to valid DA varname
 
+    self.parse_dict = {
+      "authors": self.parse_authors,
+      "description": self.set_description,
+      "notes": self.set_changelog,
+      "emailcontact": self.set_author_email,
+      "title": self.set_title,
+      "firstpage": self.set_firstpage
+    }
+
+    with open(input_filename, "r") as f:
+      doc = etree.parse(f)
+      self.parse_from_xml(doc)
+
+  def parse_from_xml(self, doc):
+    for elem in doc.getroot():
+      if elem.tag.lower() == "info":
+        for info_child in elem:
+          if info_child.tag.lower() in self.parse_dict:
+            self.parse_dict[info_child.tag.lower()](info_child)
+      elif elem.tag.lower() == "steps":
+        for step_child in elem:
+          self.sections[int(step_child.get("NUMBER"))] = step_child[0].text
+      elif elem.tag.lower() == "pages":
+        for page_child in elem:
+          self.add_page(page_child)
+
+  def parse_authors(self, authors_elem):
+    authors = []
+    for author_elem in authors_elem:
+      author = {}
+      for author_attr in author_elem:
+        author[author_attr.tag.lower()] = author_attr.text
+      authors.append(author)
+    self.metadata["authors"] = authors
+
+  def set_description(self, description_elem):
+    self.metadata["description"] = description_elem.text
+
+  def set_changelog(self, elem):
+    self.changelog = elem.text
+
+  def set_author_email(self, elem):
+    self.setup_info["author_email"] = elem.text
+
+  def set_title(self, elem):
+    self.metadata["title"] = elem.text
+
+  def set_firstpage(self, elem):
+    self.first_page_name = elem.text
+
   def add_page(self, page_elem):
-    page = PageNode(page_elem)
+    page = A2JPage(page_elem)
     if not self.first_page_name:
       self.first_page_name = page.name
     self.page_map[page.name] = page
 
-  def to_yaml(self):
+  def to_yaml_objs(self):
     metadata = { 
       "metadata": self.metadata
     }
     sections = {
-      "sections": [{val: varname(val)} for val in self.steps.values()]
+      "sections": [{val: varname(val)} for val in self.sections.values()]
     }
     all_pages = [page.to_yaml() for page in self.page_map.values()]
-    return dump_all([metadata, sections] + all_pages, string_val_style="|", sort_keys=False)
-
-def main():
-  da_interview = DAInterview()
-  with open(sys.argv[1], "r") as f:
-    doc = etree.parse(f)
-    for elem in doc.getroot():
-      if elem.tag.lower() == "info":
-        for info_child in elem:
-          if info_child.tag.lower() in parse_dict:
-            parse_dict[info_child.tag.lower()](info_child, da_interview)
-      elif elem.tag.lower() == "steps":
-        for step_child in elem:
-          da_interview.steps[int(step_child.get("NUMBER"))] = step_child[0].text
-      elif elem.tag.lower() == "pages":
-        for page_child in elem:
-          da_interview.add_page(page_child)
-  print(da_interview.to_yaml())
-
-
-# TODO(brycew): next steps:
-# * build the page graph and make the mandatory code block
-# * add fields to the question blocks
-# * get more control of YAML output (force things to be "|", or flow, depending on the attr)
-# * Better Question headers (at least don't repeat the exact thing from the subquestion)
-# * helpimages
-# * learn more
-# * codebefore and after into mandatory block
-if __name__ == "__main__":
-  main()
+    return [metadata, sections] + all_pages
