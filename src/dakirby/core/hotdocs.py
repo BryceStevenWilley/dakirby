@@ -349,4 +349,10 @@ class HotDocsInterview:
     return [metadata] + dialogs # , variables] # + computations
 
 
+# TODO: to focus on:
+# * getting PDF output correct (or at least renaming vars, getting attachment block)
+# * getting show if working correctly, script stuff, etc.
+# * what to change about the general structure of HotDocs interviews when converting to
+#   docassemble?
+
 
