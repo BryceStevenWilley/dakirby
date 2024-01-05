@@ -17,7 +17,7 @@ def nested_print(output, data, indent=0, prev_context=None):
         print(f"{ind}{key}: ", file=output, end='')
       else:
         print(f"\n{ind}{key}: ", file=output, end='')
-      nested_print(output, data[key], indent, prev_context="dict")
+      nested_print(output, data[key], indent, prev_context=key if key in ["code", "datatype", "field"] else "dict")
       idx += 1
   elif isinstance(data, list):
     indent += 2
@@ -29,19 +29,18 @@ def nested_print(output, data, indent=0, prev_context=None):
         print(f"{ind}- ", file=output, end='')
       nested_print(output, item, indent, prev_context="list")
   elif isinstance(data, str):
-    if '\n' in data:
+    if '\n' in data or '"' in data or prev_context == "code":
       indent += 2
       ind = ' ' * indent
       data = data.replace("\n", f"\n{ind}")
       print(f"|\n{ind}{data}", file=output)
+    elif prev_context in ["datatype", "inputtype", "field"]:
+      print(f"{data}", file=output)
     else:
-      ind = ' ' * indent
       print(f"\"{data}\"", file=output)
   elif isinstance(data, int) or isinstance(data, float):
-    ind = ' ' * indent
     print(f"{data}", file=output)
   else:
-    ind = ' ' * indent
     print(f"{data}", file=output)
 
 def to_yaml(objs):

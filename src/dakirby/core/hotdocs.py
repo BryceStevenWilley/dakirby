@@ -5,7 +5,18 @@ from lxml.etree import QName
 from .common import varname, PageNode
 import glob
 
+import re
+
+# w in text like that is a link, essentially <a href=""...>
+web_chevron = re.compile(r'«.w "([^»]+)"»([^«]+)«.we»')
+
 from typing import TypedDict
+
+xml_namespace = "http://www.hotdocs.com/schemas/component_library/2009"
+
+def xml_ns(arg):
+  """Returns the full URL of an XML namespaced tag"""
+  return QName(xml_namespace, arg).text
 
 class DialogElement(TypedDict):
   name: str
@@ -13,11 +24,17 @@ class DialogElement(TypedDict):
   web_link: str | None
 
 def parse_display_text(text):
-  # TODO(brycew): handle .w, vars, etc.
+  """Note: does not parse variables and scripts (since we can't fully replace them yet)."""
   if not text:
     return ""
   text = text.replace("«.b»", "**").replace("«.be»", "**")
+  # Treat underlines the same as bold (underlines are harder to read)
+  text = text.replace("«.u»", "**").replace("«.ue»", "**")
   text = text.replace("«.i»", "*").replace("«.ie»", "*")
+  text = text.replace("«.lq»", '"').replace("«.rq»", '"')
+  text = web_chevron.sub(r"[\2](\1)", text)
+  # TODO: ask brett about «.lb, «.c», and «.z»
+  text = text.replace("«.c»", '').replace("«.z»", '').replace("«.ze»", '').replace("«.lb»", '')
   return text
 
 class Variable:
@@ -35,16 +52,21 @@ class Variable:
   
   def get_field(self):
     label = self.prompt or self.name
-    return {
+    label = label.strip()
+    field = {
       "label": label,
       "field": self.da_name,
       "datatype": self.get_datatype()
     }
+    if "\n" in label:
+      field["label above field"] = True
+    return field
 
 class TextVariable(Variable):
   help: str | None
   area: bool
 
+  # TODO: get maxChars
   def __init__(self, name, prompt=None, help=None, area=False):
     super().__init__(name, prompt)
     self.help = parse_display_text(help)
@@ -89,12 +111,30 @@ class TrueFalseVariable(Variable):
 
 class MultipleChoiceVariable(Variable):
   style: str | None
-  options: list
+  options: list | str # either full choices, or reference choices var elsewhere
 
-  def __init__(self, name, prompt=None, style=None, options=None):
-    super().__init__(name, prompt)
-    self.style = style
-    self.options = options if options else []
+  def __init__(self, mc_elem):
+    """Multiple choice variable copmonent element"""
+    self.name = mc_elem.get("name")
+    self.style = None # dropDownList or buttonGrid
+    self.prompt = None
+    self.options = []
+    for elem in mc_elem:
+      if elem.tag == xml_ns("prompt"):
+        self.prompt = elem.text
+      elif elem.tag == xml_ns("options"):
+        for opt in elem:
+          val = opt.get("name")
+          disp_label = next(iter(opt_elem.text for opt_elem in opt if opt_elem.tag == xml_ns("prompt")), None)
+          if disp_label is None:
+            self.options.append((val, val))
+          else:
+            self.options.append((disp_label, val))
+      elif elem.tag == xml_ns("singleSelection"):
+        self.style = elem.get("style")
+    super().__init__(self.name, self.prompt)
+    # TODO(brycew): defMergeProps, fieldWidth
+    # TODO(brycew): conslidate different variables with the same options; should go in a different var somewhere
 
   def get_datatype(self):
     if self.style == "dropDownList":
@@ -104,18 +144,13 @@ class MultipleChoiceVariable(Variable):
 
   def get_field(self):
     field = super().get_field()
-    field["choices"] = [{tup1: tup2} if tup1 != tup2 else tup1 for tup1, tup2 in self.options]
+    if isinstance(self.options, list):
+      field["choices"] = [{tup1: tup2} if tup1 != tup2 else tup1 for tup1, tup2 in self.options]
+    else:
+      field["code"] = self.options
     return field
 
-
 class HotDocsInterview:
-
-  xml_namespace = "http://www.hotdocs.com/schemas/component_library/2009"
-
-  @classmethod
-  def xml_ns(cls, arg):
-    """Returns the full URL of an XML namespaced tag"""
-    return QName(cls.xml_namespace, arg).text
 
   def __init__(self, input_dirname):
     self.metadata = {}
@@ -127,6 +162,7 @@ class HotDocsInterview:
     # HotDoc specific things that might be useful
     self.preferences = {}
     self.code_blocks = {}
+    self.dup_choices = {}
     self.dialog_elements: dict[str, DialogElement] = {}
 
     self.master_cmp = None
@@ -135,7 +171,7 @@ class HotDocsInterview:
       with open(cmp_file, "r") as f:
         doc = etree.parse(f)
         # print(doc.getroot().tag)
-        if doc.getroot().tag == self.xml_ns("componentLibrary"):
+        if doc.getroot().tag == xml_ns("componentLibrary"):
           self.master_cmp = input_dirname + "/" + doc.getroot().get("pointedToFile", cmp_file)
           break
 
@@ -144,34 +180,69 @@ class HotDocsInterview:
 
     self.main_order_script = self.preferences.get("CUSTOM_INTERVIEW")
 
+    for var in self.variable_map.values():
+      if var.prompt:
+        var.prompt = self.sub_all_vars(var.prompt)
+    for elem in self.dialog_elements.values():
+      elem["caption"] = self.sub_all_vars(elem["caption"])
+    for dialog in self.dialogs.values():
+      if dialog["title"]:
+        dialog["title"] = self.sub_all_vars(dialog["title"])
+
   def __str__(self):
     return f"{self.master_cmp=}, {self.metadata=}, {self.setup_info=}, {self.variable_map=}"
   
   def __repr__(self):
     return str(self)
-    
+
+  vars_re = re.compile("«([^».]+)»")
+
+  def sub_all_vars(self, text):
+    def sub_vars(match):
+      hd_name = match.group(1)
+      if hd_name.startswith("IF "):
+        if hd_name[3:] in self.code_blocks:
+          return "\n% if " + varname(hd_name[3:]) + "():\n"
+        else:
+          return "\n% if " + varname(hd_name[3:]) + ":\n"
+      elif hd_name.startswith("ELSE IF "):
+        if hd_name[8:] in self.code_blocks:
+          return "\n% elif " + varname(hd_name[8:]) + "():\n"
+        else:
+          return "\n% elif " + varname(hd_name[8:]) + ":\n"
+      elif hd_name == "END IF":
+        return "\n% endif\n"
+      elif hd_name in self.code_blocks:
+        return "${ " + self.code_blocks[hd_name]["da_func_name"] + "() }"
+      elif hd_name in self.variable_map:
+        return "${ " + self.variable_map[hd_name].da_name + " }"
+      # TODO(brycew): add to errors somewhere?
+      return varname(hd_name)
+
+    return self.vars_re.subn(sub_vars, text)[0]
+
   def parse_master_cmp(self):
     with open(self.master_cmp, "r") as f:
       doc = etree.parse(f)
       for elem in doc.getroot():
-        if elem.tag.lower() == self.xml_ns("preferences"):
+        if elem.tag.lower() == xml_ns("preferences"):
           self.parse_preferences(elem)
-        elif elem.tag.lower() == self.xml_ns("components"):
+        elif elem.tag.lower() == xml_ns("components"):
           for component in elem:
             tag = component.tag
-            if tag == self.xml_ns("text"):
+            if tag == xml_ns("text"):
               self.parse_text_var(component)
-            elif tag == self.xml_ns("number"):
+            elif tag == xml_ns("number"):
               self.parse_number_var(component)
-            elif tag == self.xml_ns("trueFalse"):
+            elif tag == xml_ns("trueFalse"):
               self.parse_tf_var(component)
-            elif tag == self.xml_ns("multipleChoice"):
+            elif tag == xml_ns("multipleChoice"):
               self.parse_mc_var(component)
-            elif tag == self.xml_ns("computation"):
+            elif tag == xml_ns("computation"):
               self.parse_computation(component)
-            elif tag == self.xml_ns("dialogElement"):
+            elif tag == xml_ns("dialogElement"):
               self.parse_dialog_element(component)
-            elif tag == self.xml_ns("dialog"):
+            elif tag == xml_ns("dialog"):
               self.parse_dialog(component)
             # All other top levels are text formats, number formats, etc. Idk what to do with those.
 
@@ -181,26 +252,24 @@ class HotDocsInterview:
       self.preferences[name] = pref.text
 
   def parse_text_var(self, text_elem):
-    if len(text_elem) == 0: # If no prompt, likely set by a script somewhere?
-      return
     name = text_elem.get("name")
+    # If no prompt, likely set by a script somewhere?
     prompt = None
     help = None
     area = False
     for elem in text_elem:
-      if elem.tag == self.xml_ns("prompt"):
+      if elem.tag == xml_ns("prompt"):
         prompt = elem.text
-      elif elem.tag == self.xml_ns("resource"):
+      elif elem.tag == xml_ns("resource"):
         help = elem[0].text
-      elif elem.tag == self.xml_ns("multiLine"):
+      elif elem.tag == xml_ns("multiLine"):
         area = True
       # Ignore fieldWidth, columnWidth. Idk what to do with defMergeProps?
     # Also warnIfUnanswered?
     self.variable_map[name] = TextVariable(name, prompt=prompt, help=help, area=area)
 
   def parse_number_var(self, number_elem):
-    if len(number_elem) == 0: # If no prompt, likely set by a script somewhere?
-      return
+    # If no prompt, likely set by a script somewhere?
     name = number_elem.get("name")
     decimal_places = number_elem.get("decimalPlaces", 0)
     currency_symbol = number_elem.get("currencySymbol")
@@ -208,26 +277,25 @@ class HotDocsInterview:
     help = None
     def_format = None
     for elem in number_elem:
-      if elem.tag == self.xml_ns("prompt"):
+      if elem.tag == xml_ns("prompt"):
         prompt = elem.text
-      elif elem.tag == self.xml_ns("resource"):
+      elif elem.tag == xml_ns("resource"):
         help = elem[0].text
-      elif elem.tag == self.xml_ns("defFormat"):
+      elif elem.tag == xml_ns("defFormat"):
         def_format = elem.text
     # TODO: Also warnIfUnanswered?
     self.variable_map[name] = NumberVariable(name, prompt, help, decimal_places, currency_symbol, def_format)
 
   def parse_tf_var(self, tf_elem):
-    if len(tf_elem) == 0: # If no prompt, likely set by a script somewhere?
-      return
+    # If no prompt, likely set by a script somewhere?
     name = tf_elem.get("name")
     yes_no = tf_elem.get("yesNoOnSameLine")
     prompt = None
     help = None
     for elem in tf_elem:
-      if elem.tag == self.xml_ns("prompt"):
+      if elem.tag == xml_ns("prompt"):
         prompt = elem.text
-      elif elem.tag == self.xml_ns("resource"):
+      elif elem.tag == xml_ns("resource"):
         help = elem[0].text
     # Also warnIfUnanswered?
     self.variable_map[name] = TrueFalseVariable(name, prompt, help, yes_no)
@@ -236,30 +304,15 @@ class HotDocsInterview:
     """Multiple choice variable copmonent element"""
     if len(mc_elem) == 0: # If no prompt, likely set by a script somewhere?
       return
-    name = mc_elem.get("name")
-    style = None # dropDownList or buttonGrid
-    prompt = None
-    options = []
-    for elem in mc_elem:
-      if elem.tag == self.xml_ns("prompt"):
-        prompt = elem.text
-      elif elem.tag == self.xml_ns("options"):
-        for opt in elem:
-          val = opt.get("name")
-          disp_label = next(iter(opt_elem for opt_elem in opt if opt_elem.tag == self.xml_ns("ptompt")), None)
-          options.append((disp_label or val, val))
-      elif elem.tag == self.xml_ns("singleSelection"):
-        style = elem.get("style")
-    # TODO(brycew): defMergeProps, fieldWidth
-    # TODO(brycew): conslidate different variables with the same options; should go in a different var somewhere
-    self.variable_map[name] = MultipleChoiceVariable(name, prompt, style, options)
+    mc_var = MultipleChoiceVariable(mc_elem)
+    self.variable_map[mc_var.name] = mc_var
 
   def parse_computation(self, computation):
     name = computation.get("name")
     result_type = computation.get("resultType")
     script = ""
     for elem in computation:
-      if elem.tag == self.xml_ns("script"):
+      if elem.tag == xml_ns("script"):
         script = elem.text
     # TODO(brycew): parse Hotdocs script, for things with result, when it would return,
     # set the value to this.
@@ -267,6 +320,7 @@ class HotDocsInterview:
     # everything when it can
     self.code_blocks[name] = {
       "name": name,
+      "da_func_name": varname(name),
       "result_type": result_type,
       "script": script
     }
@@ -276,7 +330,7 @@ class HotDocsInterview:
     name = dialog_element.get("name")
     caption = None
     for elem in dialog_element:
-      if elem.tag == self.xml_ns("caption"):
+      if elem.tag == xml_ns("caption"):
         caption = elem.text
     self.dialog_elements[name] = {
       "name": name,
@@ -285,17 +339,19 @@ class HotDocsInterview:
 
   def parse_dialog(self, dialog):
     name = dialog.get("name")
+    da_name = varname(name)
     link_vars = dialog.get("linkVariables")
     title = None
     contents = []
     for elem in dialog:
-      if elem.tag == self.xml_ns("title"):
+      if elem.tag == xml_ns("title"):
         title = elem.text
-      elif elem.tag == self.xml_ns("contents"):
+      elif elem.tag == xml_ns("contents"):
         for item in elem:
           contents.append({"name": item.get("name"), "on_previous_line": item.get("onPreviousLine")})
     self.dialogs[name] = {
       "name": name,
+      "da_name": da_name,
       "title": title,
       "contents": contents,
     }
@@ -308,8 +364,33 @@ class HotDocsInterview:
     # print(f"No thing with {name}?")
     return {}
 
+
+  def merge_choices(self):
+    if self.dup_choices:
+      # Don't try to merge more than once
+      return
+    mcs = [var for _, var in self.variable_map.items() if isinstance(var, MultipleChoiceVariable)]
+    # TODO(brycew): O(n^2) could be better
+    self.dup_choices = {}
+    for idx, mc in enumerate(mcs):
+      # If these choices are already duplicates, don't need to check again
+      if isinstance(mc.options, str):
+        continue
+      mc_sorted = list(sorted(mc.options))
+      has_dup = False
+      for mc2 in mcs[idx+1:]:
+        if not isinstance(mc2.options, str) and mc_sorted == list(sorted(mc2.options)):
+          has_dup = True
+          dup_name = mc.da_name + "_choices"
+          self.dup_choices[dup_name] = mc_sorted
+          mc2.options = dup_name
+      if has_dup:
+        mc.options = dup_name
+
+
   def to_yaml_objs(self):
-    metadata = { 
+    self.merge_choices()
+    metadata = {
       "metadata": self.metadata
     }
     dialogs = []
@@ -335,18 +416,30 @@ class HotDocsInterview:
         }
       if fields:
         question["fields"] = fields
+      else:
+        question["continue button field"] = dialog["da_name"]
+      # NOTE: TEMP for testing
+      question["mandatory"] = True
       dialogs.append(question)
-    variables = {
-      "variables": self.variable_map
-    }
+    choices = [
+      {"variable name": dup_name } | {"data": [{val : disp} if disp != val else val for disp, val in dup_opts]}
+      for dup_name, dup_opts in self.dup_choices.items()
+    ]
+    variables = [
+      {
+        "id": v.name,
+        "code": f"{v.da_name} = False"
+      }
+      for v in self.variable_map.values() if v.prompt == ""
+    ]
     computations = [
       {
         "id": v["name"],
-        "code": v['script']
+        "code": f"def {v['da_func_name']}():\n  return '''tmp for code {v['name']}'''",
       }
        for v in self.code_blocks.values()
     ]
-    return [metadata] + dialogs # , variables] # + computations
+    return [metadata] + choices + dialogs + computations + variables
 
 
 # TODO: to focus on:
