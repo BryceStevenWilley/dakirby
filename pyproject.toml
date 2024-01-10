@@ -5,6 +5,16 @@ bulid-backend = "setuptools.build_meta"
 [project]
 name = "dakirby"
 version = "0.0.1"
+requires-python= ">=3.10"
+authors = [
+  {name = "Bryce Willey"}
+]
+keywords = ["docassemble", "a2jauthor", "hotdocs"]
+classifiers = [
+  "Developement States :: 2 - Pre-Alpha",
+  "Intended Audience :: Legal Industry",
+  "Programming Language :: Python :: 3.10",
+]
 
 dependencies = [
   "lxml"
@@ -12,4 +22,10 @@ dependencies = [
 
 [project.scripts]
 dakirby = "dakirby.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/BryceStevenWilley/dakirby"
+Repository = "https://github.com/BryceStevenWilley/dakirby.git"
+Issues = "https://github.com/BryceStevenWilley/dakirby/issues"
+
 

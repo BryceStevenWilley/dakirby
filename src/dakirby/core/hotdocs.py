@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from lxml import etree
+from zipfile import ZipFile
 from lxml.etree import QName
 from .common import varname, PageNode
 import glob
@@ -152,7 +153,7 @@ class MultipleChoiceVariable(Variable):
 
 class HotDocsInterview:
 
-  def __init__(self, input_dirname):
+  def __init__(self, input_name):
     self.metadata = {}
     self.setup_info = {}
     self.page_map: dict[str, PageNode] = {}
@@ -166,17 +167,32 @@ class HotDocsInterview:
     self.dialog_elements: dict[str, DialogElement] = {}
 
     self.master_cmp = None
-    for cmp_file in glob.iglob(input_dirname + "/*cmp"):
-      # print(cmp_file)
-      with open(cmp_file, "r") as f:
+
+    is_zip = input_name.endswith(".zip")
+    if not is_zip:
+      all_cmp_files = glob.iglob(input_name + "/*cmp")
+      open_file = lambda f: open(f, "r")
+    else:
+      input_zip = ZipFile(input_name)
+      all_cmp_files = [ii for ii in input_zip.infolist() if ii.filename.endswith(".cmp")]
+      open_file = lambda inf: input_zip.open(inf)
+
+    master_cmp_file = None
+    for cmp_file in all_cmp_files:
+      with open_file(cmp_file) as f:
         doc = etree.parse(f)
-        # print(doc.getroot().tag)
         if doc.getroot().tag == xml_ns("componentLibrary"):
-          self.master_cmp = input_dirname + "/" + doc.getroot().get("pointedToFile", cmp_file)
+          master_cmp_name = doc.getroot().get("pointedToFile", cmp_file)
+          print(master_cmp_name)
+          if is_zip:
+            master_cmp_file = open_file(input_zip.infolist()[0].filename + master_cmp_name)
+          else:
+            master_cmp_file = open_file(input_name + "/" + master_cmp_name)
           break
 
-    if self.master_cmp:
-      self.parse_master_cmp()
+    if master_cmp_file:
+      self.parse_master_cmp(master_cmp_file)
+      master_cmp_file.close()
 
     self.main_order_script = self.preferences.get("CUSTOM_INTERVIEW")
 
@@ -221,30 +237,29 @@ class HotDocsInterview:
 
     return self.vars_re.subn(sub_vars, text)[0]
 
-  def parse_master_cmp(self):
-    with open(self.master_cmp, "r") as f:
-      doc = etree.parse(f)
-      for elem in doc.getroot():
-        if elem.tag.lower() == xml_ns("preferences"):
-          self.parse_preferences(elem)
-        elif elem.tag.lower() == xml_ns("components"):
-          for component in elem:
-            tag = component.tag
-            if tag == xml_ns("text"):
-              self.parse_text_var(component)
-            elif tag == xml_ns("number"):
-              self.parse_number_var(component)
-            elif tag == xml_ns("trueFalse"):
-              self.parse_tf_var(component)
-            elif tag == xml_ns("multipleChoice"):
-              self.parse_mc_var(component)
-            elif tag == xml_ns("computation"):
-              self.parse_computation(component)
-            elif tag == xml_ns("dialogElement"):
-              self.parse_dialog_element(component)
-            elif tag == xml_ns("dialog"):
-              self.parse_dialog(component)
-            # All other top levels are text formats, number formats, etc. Idk what to do with those.
+  def parse_master_cmp(self, input_file):
+    doc = etree.parse(input_file)
+    for elem in doc.getroot():
+      if elem.tag.lower() == xml_ns("preferences"):
+        self.parse_preferences(elem)
+      elif elem.tag.lower() == xml_ns("components"):
+        for component in elem:
+          tag = component.tag
+          if tag == xml_ns("text"):
+            self.parse_text_var(component)
+          elif tag == xml_ns("number"):
+            self.parse_number_var(component)
+          elif tag == xml_ns("trueFalse"):
+            self.parse_tf_var(component)
+          elif tag == xml_ns("multipleChoice"):
+            self.parse_mc_var(component)
+          elif tag == xml_ns("computation"):
+            self.parse_computation(component)
+          elif tag == xml_ns("dialogElement"):
+            self.parse_dialog_element(component)
+          elif tag == xml_ns("dialog"):
+            self.parse_dialog(component)
+          # All other top levels are text formats, number formats, etc. Idk what to do with those.
 
   def parse_preferences(self, prefs):
     for pref in prefs:

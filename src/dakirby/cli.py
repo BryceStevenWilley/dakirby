@@ -11,7 +11,7 @@ def main():
   input_path = sys.argv[1]
   if input_path.endswith("Guide.xml"):
     input_interview = A2JInterview(input_path)
-  elif os.path.isdir(input_path):
+  elif os.path.isdir(input_path) or input_path.endswith(".zip"):
     # Assuming Hotdocs for now
     input_interview = HotDocsInterview(input_path)
   else:
