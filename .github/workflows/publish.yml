@@ -1,0 +1,40 @@
+name: Publish Python distributions to PyPI and TestPiPI
+on: push
+
+jobs:
+  build-n-publish:
+  runs-on: ubuntu-22.04
+    environment: release
+    permissions:
+      id-token: write
+  name: Build and publish Python distributions to PyPI
+  steps:
+    - name: "ALActions publish: Set environment variables"
+      run: |
+        echo "GITHUB_REF_NAME=${{ github.ref }}" >> $GITHUB_ENV
+        echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+        echo "GITHUB_SERVER=${{ github.server_url}}/${{ github.repository }}" >> $GITHUB_ENV
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    - name: Install pypa/build
+      run: python -m pip install build --user
+    - name: Check syntax for all files
+      run: python -m compileall . -q
+    - name: Build a binary wheel and a source tarball
+      run: python -m build --sdist --wheel --outdir dist/
+    - if: ${{ success() && startsWith(github.ref, 'refs/tags') }}
+      name: Ensure github tag is the same as the pypi tag
+      run: |
+        new_version=$(grep version= setup.py | cut -d\' -f 2)
+        [ "$GITHUB_REF_NAME" = "v$new_version" ]
+    - if: ${{ failure() }}
+      name: failed step
+      run: |
+        new_version=$(grep version= setup.py | cut -d\' -f 2)
+        echo "Github tag name ($GITHUB_REF_NAME) doesn't match the setup.py version (v$new_version). Not publishing to pypi"
+    - name: Publish distribution 📦 to PyPI
+      if: ${{ success() && startsWith(github.ref, 'refs/tags') }}
+      uses: pypa/gh-action-pypi-publish@release/v1
