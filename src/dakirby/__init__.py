@@ -1,1 +1,3 @@
-__version__ = "0.0.1"
+# If needed, uncomment
+# import importlib_metadata as metadata
+# metadata.version("dakirby")

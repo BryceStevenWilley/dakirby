@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dakirby"
-dynamic = ["version"]
+version = "0.0.1"
 requires-python= ">=3.10"
 authors = [
   {name = "Bryce Willey"}
@@ -17,7 +17,8 @@ classifiers = [
 ]
 
 dependencies = [
-  "lxml"
+  "lxml",
+  "importlib-metadata >= 1.0; python_version < '3.8'",
 ]
 
 [project.scripts]
