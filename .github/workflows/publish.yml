@@ -3,12 +3,12 @@ on: push
 
 jobs:
   build-n-publish:
-  runs-on: ubuntu-22.04
-  environment: release
-  permissions:
-    id-token: write
-  name: Build and publish Python distributions to PyPI
-  steps:
+    runs-on: ubuntu-22.04
+    environment: release
+    permissions:
+      id-token: write
+    name: Build and publish Python distributions to PyPI
+    steps:
     - name: "ALActions publish: Set environment variables"
       run: |
         echo "GITHUB_REF_NAME=${{ github.ref }}" >> $GITHUB_ENV
