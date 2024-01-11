@@ -40,6 +40,98 @@ def parse_text(text_elem):
       text += html_elem.text + "\n"
   return text + text_elem.tail
 
+class Field:
+  name: str
+  type: str
+  label: str | None
+  invalid_prompt: str | None
+  order: str | None
+  required: bool | None
+  min: str | None
+  max: str | None
+
+  # datatype, input type
+  type_dict = {
+    "text": ("text", None),
+    "numberdollar": ("currency", None),
+    "textlong": ("text", "area"),
+    "number": ("number", None),
+    "datemdy": ("date", None),
+    "textpick": ("dropdown", None),
+    "radio": ("radio", None),
+    "numberzip": ("text", None),
+    "numberphone": ("al_international_phone", None),
+  }
+
+  def __init__(self, name, type, label=None, invalid_prompt=None, order=None, required=None, min=None, 
+               max=None, calculator=None, value=None, listdata=None, listsrc=None):
+    self.name = name
+    self.type = type
+    self.label = label
+    self.invalid_prompt = invalid_prompt
+    self.order = order
+    self.required = required
+    self.min = min
+    self.max = max
+    self.value = value
+    self.listdata = [(opt.get("VALUE"), opt.text) for opt in listdata] if listdata else []
+    self.listsrc = listsrc
+
+  def get_datatype(self):
+    return self.type_dict.get(self.type)[0]
+
+  def get_input_type(self):
+    return self.type_dict.get(self.type)[1]
+
+  def get_field(self):
+    label = self.label or self.name.replace("_", " ").capitalize()
+    label = label.strip()
+    field = {
+      "label": label,
+      "field": varname(self.name),
+      "datatype": self.get_datatype()
+    }
+    input_type = self.get_input_type()
+    if input_type:
+      field["input type"] = input_type
+    if "\n" in label:
+      field["label above field"] = True
+    return field
+
+def parse_field(field_elem):
+  type = field_elem.get("TYPE")
+
+  # ? idk bout this one
+  order = field_elem.get("ORDER")
+  required = field_elem.get("REQUIRED")
+  min = field_elem.get("MIN")
+  max = field_elem.get("MAX")
+  # idk how to use this one, but hand onto it
+  calculator = field_elem.get("CALCULATOR")
+  name = None
+  label = None
+  value = None
+  invalid_prompt = None
+  listdata = None
+  listsrc = None
+  for field_attr in field_elem:
+    if field_attr.tag.lower() == "name":
+      name = varname(field_attr.text)
+    elif field_attr.tag.lower() == "label":
+      label = field_attr.text
+    elif field_attr.tag.lower() == "value":
+      value = field_attr.text
+    elif field_attr.tag.lower() == "invalidprompt":
+      invalid_prompt = field_attr.text
+    elif field_attr.tag.lower() == "listdata":
+      listdata = field_attr
+    # TODO(brycew): read this in, everything goes in list data
+    elif field_attr.tag.lower() == "listsrc":
+      listsrc = field_attr.text
+    else:
+      print(f"Unknown field attr: {field_attr.tag}")
+  return Field(name, type, label, invalid_prompt, order, required, min, max, calculator, value, listdata, listsrc)
+
 
 class A2JPage(PageNode):
 
@@ -102,45 +194,49 @@ class A2JPage(PageNode):
           button["value"] = button_attr.text
         else:
           print(f"Unknown button attr: {button_attr.tag}")
+      buttons.append(button)
     return buttons
+
+  # datatype, input type
+  type_dict = {
+    "numberdollar": ("currency", None),
+    "textlong": ("text", "area"),
+    "number": ("number", None),
+    "datemdy": ("date", None),
+    "textpick": ("dropdown", None),
+    "radio": ("radio", None),
+    "numberzip": ("text", None),
+    "numberphone": ("al_international_phone", None),
+  }
 
   def parse_fields(self, fields_elem):
     fields = []
     for field_elem in fields_elem:
-      field = {}
-      field["type"] = field_elem.get("TYPE")
-      # ? idk bout this one
-      field["order"] = field_elem.get("ORDER")
-      field["required"] = field_elem.get("required")
-      field["min"] = field_elem.get("min")
-      field["max"] = field_elem.get("max")
-      # idk how to use this one, but hand onto it
-      field["calculator"] = field_elem.get("calculator")
-      for field_attr in field_elem:
-        if field_attr.tag.lower() == "name":
-          field["var"] = field_attr.text
-        elif field_attr.tag.lower() == "label":
-          field["label"] = field_attr.text
-        elif field_attr.tag.lower() == "value":
-          field["value"] = field_attr.text
-        elif field_attr.tag.lower() == "invalidprompt":
-          field["invalid prompt"] = field_attr.text
-        elif field_attr.tag.lower() == "listdata":
-          field["listdata"] = field_attr
-        # TODO(brycew): read this in, everything goes in list data
-        elif field_attr.tag.lower() == "listsrc":
-          field["listsrc"] = field_attr
-        else:
-          print(f"Unknown field attr: {field_attr.tag}")
+      fields.append(parse_field(field_elem))
+    return fields
     
   def to_yaml(self):
-    # TODO(brycew): step, help, learn, helpimage, buttons, fields, codebefore, codeafter
+    # TODO(brycew): step, help, learn, helpimage, buttons, codebefore, codeafter
+    # TODO(brycew): better questions; split by period, if there is one before the first line break
+    text = (self.text or "").split("\n")
+    if len(text) > 1:
+      question = text[0]
+      subquestion = "\n".join(text[1:])
+    else:
+      question = text[0]
+      subquestion = ""
+
     block = {
       "id": varname(self.name),
-      "question": (self.text or "").split("\n")[0],
-      "subquestion": self.text,
+      "question": question.strip(),
+      "subquestion": subquestion.lstrip(),
       "continue button field": varname(self.name),
     }
+    if self.fields:
+      block["fields"] = [f.get_field() for f in self.fields]
+    # TODO(brycew): Button's aren't ready quite yet
+    #if self.buttons:
+    #  block["buttons"] = self.buttons
     return block
 
 

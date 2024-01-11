@@ -48,7 +48,7 @@ class Variable:
     self.da_name = varname(name)
     self.prompt = parse_display_text(prompt)
 
-  def get_datatype():
+  def get_datatype(self):
     return "text"
   
   def get_field(self):

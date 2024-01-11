@@ -20,6 +20,9 @@ def nested_print(output, data, indent=0, prev_context=None):
       nested_print(output, data[key], indent, prev_context=key if key in ["code", "datatype", "field"] else "dict")
       idx += 1
   elif isinstance(data, list):
+    if not data:
+      print("[]", file=output)
+      return
     indent += 2
     ind = ' ' * indent
     for idx, item in enumerate(data):
