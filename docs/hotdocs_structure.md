@@ -161,7 +161,7 @@ Have component identity properties:
 * `parameters`: `<hd:parameters>`, and `<hd:parameter name="X" type="number"/>`
 
 * sometimes there are `localVariables`?
-* `script`: [Hotdocs script parser](https://help.hotdocs.com/preview/help/HotDocs_Scripting_Language_Overview.htm)?
+* `script`: [Hotdocs script parser](https://help.hotdocs.com/preview/help/HotDocs_Scripting_Language_Overview.htm), [Language Syntax](https://help.hotdocs.com/preview/help/HotDocs_Scripting_Language_Syntax.htm), [Literals](https://help.hotdocs.com/preview/help/Literals.htm), [Full List of Instructions, functions, ops](https://help.hotdocs.com/preview/help/Full_List_of_Instructions,_Functions_and_Operators.htm)
 * [Behaviors in scripts](https://help.hotdocs.com/preview/help/Computation_Editor.htm#Behavior_tab) let you change the default format for fields, default for unanswered text, and lets you set padding. Would have to come up with DA functions for that to work.
 * notes: just comments
 
