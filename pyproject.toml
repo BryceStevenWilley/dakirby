@@ -13,7 +13,7 @@ description = "A HotDocs / A2J to docassemble converter"
 readme = "README.md"
 keywords = ["docassemble", "a2jauthor", "hotdocs"]
 classifiers = [
-  "Developement States :: 2 - Pre-Alpha",
+  "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Legal Industry",
   "Programming Language :: Python :: 3.10",
   "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
