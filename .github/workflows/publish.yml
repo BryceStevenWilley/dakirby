@@ -28,7 +28,7 @@ jobs:
     - if: ${{ success() && startsWith(github.ref, 'refs/tags') }}
       name: Ensure github tag is the same as the pypi tag
       run: |
-        new_version=$(grep version= setup.py | cut -d\' -f 2)
+        new_version=$(grep "version =" pyproject.toml | cut -d\" -f 2)
         [ "$GITHUB_REF_NAME" = "v$new_version" ]
     - if: ${{ failure() }}
       name: failed step
