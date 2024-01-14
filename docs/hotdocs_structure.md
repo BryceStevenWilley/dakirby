@@ -24,7 +24,7 @@ to find which one is the master.
 
 The most important part of the master component file are the components.
 
-## Components:
+## Components
 
 [3 types of components](https://help.hotdocs.com/preview/help/Components_Overview.htm#MiniTOCBookMark2):
 
@@ -51,27 +51,27 @@ Can also have `fieldWidth`, that can specify an exact width or a "calculated" wi
 
 Examples:
 
-```
+```xml
 <hd:trueFalse name="Agree no PII TF" yesNoOnSameLine="true" askAutomatically="false">
-	<hd:prompt>Do you understand that you should not enter any personal identifying information unless this tool specifically asks for it?</hd:prompt>
+  <hd:prompt>Do you understand that you should not enter any personal identifying information unless this tool specifically asks for it?</hd:prompt>
 </hd:trueFalse>
 ```
 
-```
+```xml
 <hd:text name="Defendant name first TE" askAutomatically="false" warnIfUnanswered="false">
-	<hd:prompt>First</hd:prompt>
+  <hd:prompt>First</hd:prompt>
 </hd:text>
 ```
 
-```
+```xml
 <hd:multipleChoice name="Spouse in armed forces MC" askAutomatically="false" warnIfUnanswered="false">
-	<hd:prompt>Is «Your spouse/the defendant CO» currently in the United States armed forces?</hd:prompt>
-	<hd:fieldWidth widthType="exact" exactWidth="64"/>
-	<hd:options>
-		<hd:option name="Yes"/>
-		<hd:option name="No"/>
-		<hd:option name="I don&apos;t know"/>
-	</hd:options>
+  <hd:prompt>Is «Your spouse/the defendant CO» currently in the United States armed forces?</hd:prompt>
+  <hd:fieldWidth widthType="exact" exactWidth="64"/>
+  <hd:options>
+    <hd:option name="Yes"/>
+    <hd:option name="No"/>
+    <hd:option name="I don&apos;t know"/>
+  </hd:options>
 ```
 
 `<singleSelection style="dropDownList"/>` for DA dropdowns.

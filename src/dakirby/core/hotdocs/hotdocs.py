@@ -3,7 +3,7 @@
 from lxml import etree
 from zipfile import ZipFile
 from lxml.etree import QName
-from .common import varname, PageNode
+from ..common import varname, PageNode
 import glob
 
 import re
@@ -358,17 +358,21 @@ class HotDocsInterview:
     link_vars = dialog.get("linkVariables")
     title = None
     contents = []
+    script = None
     for elem in dialog:
       if elem.tag == xml_ns("title"):
         title = elem.text
       elif elem.tag == xml_ns("contents"):
         for item in elem:
           contents.append({"name": item.get("name"), "on_previous_line": item.get("onPreviousLine")})
+      elif elem.tag == xml_ns("script"):
+        script = elem.text
     self.dialogs[name] = {
       "name": name,
       "da_name": da_name,
       "title": title,
       "contents": contents,
+      "script": script
     }
 
   def to_question_screen(self, name):
@@ -450,11 +454,12 @@ class HotDocsInterview:
     computations = [
       {
         "id": v["name"],
-        "code": f"def {v['da_func_name']}():\n  return '''tmp for code {v['name']}'''",
+        #"code": f"def {v['da_func_name']}():\n  return '''tmp for code {v['name']}'''",
+        "code": v["script"]
       }
        for v in self.code_blocks.values()
     ]
-    return [metadata] + choices + dialogs + computations + variables
+    return [metadata] + choices + dialogs + computations # + variables
 
 
 # TODO: to focus on:
